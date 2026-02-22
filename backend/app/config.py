@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     LOCATION_UPDATE_INTERVAL_SECONDS: int = 15
     MAX_PROXIMITY_KM: float = 50.0
 
+    # ── Auto-seed (set to false once you have real data) ─────
+    AUTO_SEED: bool = True
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",")]

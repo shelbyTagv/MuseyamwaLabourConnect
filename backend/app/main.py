@@ -14,11 +14,18 @@ from app.routes import auth, users, jobs, tokens, payments, locations, messages,
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create tables and seed admin on startup."""
+    """Create tables, seed admin, and optionally seed sample data on startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     # Seed admin user
     await seed_admin()
+    # Auto-seed sample data (safe for free-tier deploys with no shell access)
+    if settings.AUTO_SEED:
+        try:
+            from app.seed import seed
+            await seed()
+        except Exception as e:
+            print(f"Auto-seed skipped or failed: {e}")
     yield
 
 

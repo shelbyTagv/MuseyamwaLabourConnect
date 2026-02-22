@@ -61,6 +61,13 @@ async def seed():
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
+        # Skip if seed data already exists (idempotent)
+        from sqlalchemy import select
+        existing = await db.execute(select(User).where(User.email == "tinashe@employer.co.zw"))
+        if existing.scalar_one_or_none():
+            print("✅ Seed data already exists, skipping.")
+            return
+
         employer_ids = []
         employee_ids = []
 
