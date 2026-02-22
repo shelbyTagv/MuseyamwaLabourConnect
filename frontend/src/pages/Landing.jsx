@@ -78,7 +78,7 @@ export default function Landing() {
                         Built for the Hustlers. Built for <span className="gradient-text">Real Work.</span>
                     </h3>
                     <p className="text-white/50 text-center max-w-2xl mx-auto mb-16">
-                        We know the struggle — waiting at road junctions for work, relying on word-of-mouth,
+                        Ko tozviziva ka — zvakawoma kunoforera basa kuBorrowdale, apa usingazive kuti ndiyani arikuuya kuzokutor,
                         missing out on jobs because someone else got there first. That ends here.
                     </p>
 
@@ -102,12 +102,7 @@ export default function Landing() {
                                 desc: "Our app works on smartphones with basic data — even on slow networks. No need for a fancy phone or laptop.",
                                 color: "text-blue-400",
                             },
-                            {
-                                icon: Shield,
-                                title: "Verified & Safe",
-                                desc: "Every user is phone-verified with OTP. You know who you're working with. Build your reputation with ratings.",
-                                color: "text-purple-400",
-                            },
+
                             {
                                 icon: MessageCircle,
                                 title: "Chat Directly",
@@ -148,19 +143,19 @@ export default function Landing() {
                             {
                                 step: "1",
                                 title: "Sign Up for Free",
-                                desc: "Create your account with just your name, phone number, and skills. It takes 2 minutes. No documents, no fees.",
+                                desc: "",
                                 icon: Phone,
                             },
                             {
                                 step: "2",
                                 title: "Go Online & Get Visible",
-                                desc: "Toggle your status to 'Online' and you'll appear on the live map. Employers in your area can see your skills, location, and ratings instantly.",
+                                desc: "",
                                 icon: MapPin,
                             },
                             {
                                 step: "3",
                                 title: "Get Hired & Get Paid",
-                                desc: "Employers send you job offers with a price. Accept, negotiate, or counter. Complete the work, get rated, and grow your reputation. Payment is between you and the employer — direct, no middlemen.",
+                                desc: "",
                                 icon: Briefcase,
                             },
                         ].map(({ step, title, desc, icon: Icon }) => (
@@ -310,7 +305,7 @@ export default function Landing() {
                 <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
                     <div className="text-center md:text-left">
                         <h4 className="text-lg font-bold gradient-text">MuseyamwaLabourConnect</h4>
-                        <p className="text-xs text-white/30 mt-1">Zimbabwe's tokenized labour marketplace</p>
+                        <p className="text-xs text-white/30 mt-1">Zimbabwe's #1 labour marketplace</p>
                     </div>
                     <div className="flex items-center gap-6 text-sm text-white/40">
                         <Link to="/login" className="hover:text-white transition-colors">Sign In</Link>
