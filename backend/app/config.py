@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     # ── Pesepay ───────────────────────────────────────────────
     PESEPAY_INTEGRATION_KEY: str = ""
     PESEPAY_ENCRYPTION_KEY: str = ""
-    PESEPAY_API_URL: str = "https://api.pesepay.com/api/payments-engine/v1"
-    PESEPAY_RETURN_URL: str = "http://localhost:3000/tokens/callback"
+    PESEPAY_API_URL: str = "https://api.pesepay.com/api/payments-engine/v2"
+    PESEPAY_RETURN_URL: str = "http://localhost:3000/wallet"
     PESEPAY_RESULT_URL: str = "http://localhost:8000/api/v1/payments/webhook"
 
     # ── Application ───────────────────────────────────────────
