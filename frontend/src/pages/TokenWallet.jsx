@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../services/api";
 import toast from "react-hot-toast";
-import { Coins, ArrowUpCircle, ArrowDownCircle, Plus, Smartphone, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Coins, ArrowUpCircle, ArrowDownCircle, Plus, Smartphone, CheckCircle, XCircle, Loader2, ShieldCheck, KeyRound } from "lucide-react";
 
 export default function TokenWallet() {
     const [wallet, setWallet] = useState(null);
@@ -10,9 +10,17 @@ export default function TokenWallet() {
     const [purchaseForm, setPurchaseForm] = useState({ amount: 10, method: "ecocash", phone: "" });
     const [loading, setLoading] = useState(true);
     const [purchasing, setPurchasing] = useState(false);
+    const [user, setUser] = useState(null);
+
+    // Phone verification
+    const [showVerify, setShowVerify] = useState(false);
+    const [otpCode, setOtpCode] = useState("");
+    const [otpSent, setOtpSent] = useState(false);
+    const [sendingOtp, setSendingOtp] = useState(false);
+    const [verifying, setVerifying] = useState(false);
 
     // Payment status tracking
-    const [paymentStatus, setPaymentStatus] = useState(null); // null | "pending" | "success" | "failed"
+    const [paymentStatus, setPaymentStatus] = useState(null);
     const [activePaymentId, setActivePaymentId] = useState(null);
     const pollRef = useRef(null);
 
@@ -20,21 +28,60 @@ export default function TokenWallet() {
 
     const loadData = async () => {
         try {
-            const [wRes, tRes] = await Promise.all([
+            const [wRes, tRes, uRes] = await Promise.all([
                 api.get("/tokens/wallet"),
                 api.get("/tokens/transactions"),
+                api.get("/auth/me"),
             ]);
             setWallet(wRes.data);
             setTransactions(tRes.data);
+            setUser(uRes.data);
         } catch { toast.error("Failed to load wallet"); }
         finally { setLoading(false); }
     };
 
-    const purchase = async () => {
-        if (!purchaseForm.phone) {
-            toast.error("Please enter your phone number");
-            return;
+    // ── Phone Verification ──────────────────────────────────
+
+    const sendOtp = async () => {
+        setSendingOtp(true);
+        try {
+            const res = await api.post("/auth/send-otp", {});
+            toast.success(res.data.message);
+            setOtpSent(true);
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Failed to send OTP");
         }
+        finally { setSendingOtp(false); }
+    };
+
+    const verifyOtp = async () => {
+        if (otpCode.length !== 6) { toast.error("Enter the 6-digit code"); return; }
+        setVerifying(true);
+        try {
+            const res = await api.post("/auth/verify-otp", { otp: otpCode });
+            toast.success(res.data.message);
+            setShowVerify(false);
+            setOtpCode("");
+            setOtpSent(false);
+            setUser(prev => ({ ...prev, phone_verified: true }));
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Verification failed");
+        }
+        finally { setVerifying(false); }
+    };
+
+    const handleBuyClick = () => {
+        if (!user?.phone_verified) {
+            setShowVerify(true);
+        } else {
+            setShowPurchase(true);
+        }
+    };
+
+    // ── Token Purchase ──────────────────────────────────────
+
+    const purchase = async () => {
+        if (!purchaseForm.phone) { toast.error("Please enter your phone number"); return; }
         setPurchasing(true);
         setPaymentStatus("pending");
 
@@ -45,7 +92,6 @@ export default function TokenWallet() {
             setShowPurchase(false);
             toast.success("📲 Check your phone! Enter your PIN to complete payment.");
 
-            // Start polling for payment completion
             let attempts = 0;
             pollRef.current = setInterval(async () => {
                 attempts++;
@@ -58,8 +104,7 @@ export default function TokenWallet() {
                         setPaymentStatus("success");
                         setPurchasing(false);
                         toast.success(`🎉 ${purchaseForm.amount} tokens added to your wallet!`);
-                        loadData(); // Refresh wallet + transactions
-                        // Clear success state after a moment
+                        loadData();
                         setTimeout(() => { setPaymentStatus(null); setActivePaymentId(null); }, 5000);
                     } else if (status === "failed") {
                         clearInterval(pollRef.current);
@@ -68,12 +113,8 @@ export default function TokenWallet() {
                         toast.error("Payment was not completed. Please try again.");
                         setTimeout(() => { setPaymentStatus(null); setActivePaymentId(null); }, 5000);
                     }
-                    // else still pending — keep polling
-                } catch {
-                    // Polling error — keep trying
-                }
+                } catch { /* keep polling */ }
 
-                // Stop polling after 2 minutes
                 if (attempts >= 24) {
                     clearInterval(pollRef.current);
                     setPaymentStatus(null);
@@ -81,7 +122,7 @@ export default function TokenWallet() {
                     setActivePaymentId(null);
                     toast.error("Payment verification timed out. If you completed payment, your tokens will be credited shortly.");
                 }
-            }, 5000); // Poll every 5 seconds
+            }, 5000);
 
         } catch (err) {
             setPurchasing(false);
@@ -94,12 +135,26 @@ export default function TokenWallet() {
 
     return (
         <div className="max-w-2xl mx-auto space-y-6 animate-fade-in pb-20 lg:pb-0">
+            {/* Phone Verification Banner */}
+            {user && !user.phone_verified && (
+                <div className="glass-card p-4 flex items-center gap-4 border border-amber-500/30 bg-amber-500/5">
+                    <ShieldCheck size={24} className="text-amber-400 flex-shrink-0" />
+                    <div className="flex-1">
+                        <p className="font-medium text-amber-300">Phone not verified</p>
+                        <p className="text-sm text-white/50 mt-0.5">Verify your phone number to enable token purchases</p>
+                    </div>
+                    <button onClick={() => setShowVerify(true)} className="btn-primary text-sm py-1.5 px-4">
+                        Verify
+                    </button>
+                </div>
+            )}
+
             {/* Payment Status Banner */}
             {paymentStatus && (
                 <div className={`glass-card p-4 flex items-center gap-4 border
                     ${paymentStatus === "pending" ? "border-amber-500/30 bg-amber-500/5" :
-                      paymentStatus === "success" ? "border-emerald-500/30 bg-emerald-500/5" :
-                      "border-rose-500/30 bg-rose-500/5"}`}>
+                        paymentStatus === "success" ? "border-emerald-500/30 bg-emerald-500/5" :
+                            "border-rose-500/30 bg-rose-500/5"}`}>
                     {paymentStatus === "pending" && (
                         <>
                             <Loader2 size={24} className="text-amber-400 animate-spin flex-shrink-0" />
@@ -138,13 +193,18 @@ export default function TokenWallet() {
                 <p className="text-5xl font-bold gradient-text">{wallet?.balance || 0}</p>
                 <p className="text-sm text-white/40 mt-2">≈ ${((wallet?.balance || 0) * 0.50).toFixed(2)} USD</p>
                 <button
-                    onClick={() => setShowPurchase(true)}
+                    onClick={handleBuyClick}
                     disabled={purchasing}
                     className="btn-primary mt-6 flex items-center gap-2 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {purchasing ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
                     {purchasing ? "Processing..." : "Buy Tokens"}
                 </button>
+                {user && user.phone_verified && (
+                    <p className="text-xs text-emerald-400/60 mt-2 flex items-center justify-center gap-1">
+                        <ShieldCheck size={12} /> Phone verified
+                    </p>
+                )}
             </div>
 
             {/* Stats */}
@@ -193,7 +253,70 @@ export default function TokenWallet() {
                 )}
             </div>
 
-            {/* Purchase Modal */}
+            {/* ── Phone Verification Modal ── */}
+            {showVerify && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="glass-card p-6 w-full max-w-sm space-y-5">
+                        <h2 className="text-xl font-bold flex items-center gap-2">
+                            <ShieldCheck size={20} className="text-brand-400" /> Verify Phone Number
+                        </h2>
+
+                        <div className="glass-card p-4 bg-white/3 text-center">
+                            <p className="text-sm text-white/60">Registered phone</p>
+                            <p className="text-lg font-semibold text-white mt-1">{user?.phone || "N/A"}</p>
+                        </div>
+
+                        {!otpSent ? (
+                            <>
+                                <p className="text-sm text-white/50">
+                                    We'll send a 6-digit code to your registered phone number to verify your identity.
+                                </p>
+                                <div className="flex gap-3 justify-end pt-2">
+                                    <button onClick={() => setShowVerify(false)} className="btn-secondary">Cancel</button>
+                                    <button onClick={sendOtp} disabled={sendingOtp} className="btn-primary flex items-center gap-2 disabled:opacity-50">
+                                        {sendingOtp ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
+                                        Send Code
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div>
+                                    <label className="input-label">Enter 6-digit code</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            className="input-field text-center text-xl tracking-[0.5em] font-mono"
+                                            placeholder="000000"
+                                            maxLength={6}
+                                            value={otpCode}
+                                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <p className="text-xs text-white/40 mt-2">
+                                        Check Render logs for the OTP code (SMS integration coming soon)
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-3 justify-between pt-2">
+                                    <button onClick={sendOtp} disabled={sendingOtp} className="text-sm text-brand-400 hover:text-brand-300 transition-colors">
+                                        {sendingOtp ? "Sending..." : "Resend code"}
+                                    </button>
+                                    <div className="flex gap-3">
+                                        <button onClick={() => { setShowVerify(false); setOtpSent(false); setOtpCode(""); }} className="btn-secondary">Cancel</button>
+                                        <button onClick={verifyOtp} disabled={verifying || otpCode.length !== 6} className="btn-primary flex items-center gap-2 disabled:opacity-50">
+                                            {verifying ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
+                                            Verify
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Purchase Modal ── */}
             {showPurchase && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                     <div className="glass-card p-6 w-full max-w-sm space-y-5">

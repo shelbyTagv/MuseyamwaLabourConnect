@@ -116,6 +116,14 @@ async def purchase_tokens(
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Phone number required for mobile payment")
 
+    # Require phone verification before payment
+    if not current_user.phone_verified:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="Phone number not verified. Please verify your phone first.",
+        )
+
     total_usd = req.amount * settings.DEFAULT_TOKEN_PRICE_USD
 
     # Create payment record

@@ -41,6 +41,11 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_suspended = Column(Boolean, default=False)
     is_online = Column(Boolean, default=False)
+    phone_verified = Column(Boolean, default=False)
+
+    # Phone OTP verification
+    phone_otp = Column(String(6), nullable=True)
+    phone_otp_expires = Column(DateTime, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

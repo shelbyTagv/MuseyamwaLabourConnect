@@ -1,12 +1,5 @@
 import { Link } from "react-router-dom";
-import { MapPin, Coins, Zap, Shield, ArrowRight, Star } from "lucide-react";
-
-const FEATURES = [
-    { icon: MapPin, title: "GPS-Powered Matching", desc: "Find workers near you in real-time with live heatmaps and profession tags." },
-    { icon: Coins, title: "Token Economy", desc: "Fair, transparent tokenized system. Pay for what you use via EcoCash or Innbucks." },
-    { icon: Zap, title: "Instant Connections", desc: "Real-time offers, negotiations, and assignments. No waiting, no delays." },
-    { icon: Shield, title: "Verified & Secure", desc: "Verified workers, encrypted chats, dispute resolution, and rating system." },
-];
+import { ArrowRight, Star } from "lucide-react";
 
 export default function Landing() {
     return (
@@ -18,7 +11,7 @@ export default function Landing() {
                 <div className="absolute top-40 right-20 w-[300px] h-[300px] bg-teal-400/10 rounded-full blur-[80px]" />
 
                 <header className="relative z-10 flex items-center justify-between px-6 lg:px-16 py-6">
-                    <h1 className="text-xl font-bold gradient-text">MuseyamwaLabourConnect</h1>
+                    <h1 className="text-2xl font-extrabold gradient-text tracking-tight">MuseyamwaLabourConnect</h1>
                     <div className="flex items-center gap-4">
                         <Link to="/login" className="text-sm text-white/70 hover:text-white transition-colors">Sign In</Link>
                         <Link to="/register" className="btn-primary text-sm !py-2 !px-5">Get Started</Link>
@@ -48,23 +41,7 @@ export default function Landing() {
                 </section>
             </div>
 
-            {/* ── Features ── */}
-            <section className="py-24 px-6 lg:px-16">
-                <h3 className="text-3xl font-bold text-center mb-16">
-                    Why <span className="gradient-text">MuseyamwaLabourConnect</span>?
-                </h3>
-                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
-                    {FEATURES.map(({ icon: Icon, title, desc }) => (
-                        <div key={title} className="glass-card-hover p-6">
-                            <div className="w-12 h-12 rounded-xl bg-brand-600/20 flex items-center justify-center mb-4">
-                                <Icon size={24} className="text-brand-400" />
-                            </div>
-                            <h4 className="text-lg font-semibold mb-2">{title}</h4>
-                            <p className="text-sm text-white/50 leading-relaxed">{desc}</p>
-                        </div>
-                    ))}
-                </div>
-            </section>
+
 
             {/* ── How It Works ── */}
             <section className="py-24 px-6 lg:px-16 bg-white/[0.02]">
@@ -90,9 +67,12 @@ export default function Landing() {
             </section>
 
             {/* ── Footer ── */}
-            <footer className="py-12 px-6 lg:px-16 border-t border-white/5 text-center">
+            <footer className="py-12 px-6 lg:px-16 border-t border-white/5 text-center space-y-1">
                 <p className="text-sm text-white/30">
-                    © 2026 MuseyamwaLabourConnect. Built for Zimbabwe 🇿🇼
+                    © 2026 MuseyamwaLabourConnect. All rights reserved.
+                </p>
+                <p className="text-xs text-white/20">
+                    Designed & Developed by <span className="text-brand-400/70 font-medium">TAGV Engineering Solutions (Pvt) Ltd</span>
                 </p>
             </footer>
         </div>

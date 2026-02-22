@@ -52,6 +52,7 @@ class UserResponse(BaseModel):
     is_verified: bool
     is_active: bool
     is_online: bool
+    phone_verified: bool = False
     created_at: datetime
 
     class Config:
@@ -200,6 +201,19 @@ class TokenPurchaseRequest(BaseModel):
     amount: int = Field(..., gt=0)
     method: PaymentMethod = PaymentMethod.ECOCASH
     phone: Optional[str] = None
+
+
+class SendOTPRequest(BaseModel):
+    phone: Optional[str] = None  # If not provided, uses user's registered phone
+
+
+class VerifyOTPRequest(BaseModel):
+    otp: str = Field(..., min_length=6, max_length=6)
+
+
+class OTPResponse(BaseModel):
+    message: str
+    phone_verified: bool = False
 
 
 # ── Payment Schemas ───────────────────────────────────────────
