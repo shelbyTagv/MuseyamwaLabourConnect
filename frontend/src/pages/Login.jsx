@@ -55,24 +55,30 @@ export default function Login() {
     };
 
     const handleFirebaseSend = async (phoneNumber) => {
+        console.log("🔍 LOGIN: handleFirebaseSend called with:", phoneNumber);
         setSending(true);
         try {
+            console.log("🔍 LOGIN: Importing firebase module...");
             const { setupRecaptcha, sendFirebaseOTP } = await import("../services/firebase");
+            console.log("🔍 LOGIN: Firebase module imported, setting up reCAPTCHA...");
             setupRecaptcha("verify-btn");
+            console.log("🔍 LOGIN: reCAPTCHA ready, sending OTP...");
             const confirmation = await sendFirebaseOTP(phoneNumber);
             confirmationRef.current = confirmation;
+            console.log("✅ LOGIN: OTP sent successfully!");
             toast.success(`📲 Verification code sent to ${phoneNumber}`);
         } catch (err) {
-            console.error("Firebase OTP error:", err);
+            console.error("❌ LOGIN: Firebase OTP FAILED:", err.code, err.message, err);
             if (err.code === "auth/too-many-requests") {
                 toast.error("Too many attempts. Please try again later.");
             } else if (err.code === "auth/invalid-phone-number") {
                 toast.error("Invalid phone number format. Use +263...");
             } else {
-                toast.error("Failed to send code. Try again.");
+                toast.error(`Failed to send code: ${err.code || err.message || "Unknown error"}`);
             }
         } finally {
             setSending(false);
+
         }
     };
 

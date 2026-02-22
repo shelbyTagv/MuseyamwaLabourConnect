@@ -1,15 +1,5 @@
 /**
  * Firebase configuration for Phone Auth.
- *
- * SETUP:
- * 1. Go to https://console.firebase.google.com
- * 2. Create a project (or reuse one)
- * 3. Enable Authentication → Phone sign-in method
- * 4. Copy your config values into the .env file:
- *    VITE_FIREBASE_API_KEY=...
- *    VITE_FIREBASE_AUTH_DOMAIN=...
- *    VITE_FIREBASE_PROJECT_ID=...
- *    VITE_FIREBASE_APP_ID=...
  */
 
 import { initializeApp } from "firebase/app";
@@ -26,53 +16,92 @@ const firebaseConfig = {
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+// ── DEBUG: Log Firebase config on load ──
+console.log("🔍 FIREBASE CONFIG DEBUG:");
+console.log("  apiKey:", firebaseConfig.apiKey ? "✅ SET (" + firebaseConfig.apiKey.substring(0, 10) + "...)" : "❌ MISSING");
+console.log("  authDomain:", firebaseConfig.authDomain || "❌ MISSING");
+console.log("  projectId:", firebaseConfig.projectId || "❌ MISSING");
+console.log("  appId:", firebaseConfig.appId ? "✅ SET" : "❌ MISSING");
+
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+    console.error("❌ FIREBASE: Missing required config! Add VITE_FIREBASE_* env vars to Vercel.");
+}
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+console.log("🔍 FIREBASE: App initialized, auth ready");
 
 /**
  * Set up an invisible reCAPTCHA on a button.
- * Call this once when the OTP step mounts.
- *
- * @param {string} buttonId - The id of the "send code" / "verify" button
- * @returns {RecaptchaVerifier}
  */
 export function setupRecaptcha(buttonId) {
-    if (window.recaptchaVerifier) {
-        window.recaptchaVerifier.clear();
+    console.log(`🔍 FIREBASE: setupRecaptcha("${buttonId}")`);
+    try {
+        if (window.recaptchaVerifier) {
+            console.log("🔍 FIREBASE: Clearing old reCAPTCHA verifier");
+            window.recaptchaVerifier.clear();
+        }
+        const btn = document.getElementById(buttonId);
+        console.log(`🔍 FIREBASE: Button #${buttonId} found:`, !!btn);
+
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, buttonId, {
+            size: "invisible",
+            callback: () => {
+                console.log("✅ FIREBASE: reCAPTCHA solved!");
+            },
+            "expired-callback": () => {
+                console.warn("⚠️ FIREBASE: reCAPTCHA expired");
+            },
+        });
+        console.log("✅ FIREBASE: RecaptchaVerifier created successfully");
+        return window.recaptchaVerifier;
+    } catch (err) {
+        console.error("❌ FIREBASE: setupRecaptcha FAILED:", err.code, err.message);
+        throw err;
     }
-    window.recaptchaVerifier = new RecaptchaVerifier(auth, buttonId, {
-        size: "invisible",
-        callback: () => {
-            // reCAPTCHA solved — allow signInWithPhoneNumber
-        },
-    });
-    return window.recaptchaVerifier;
 }
 
 /**
  * Send OTP to a phone number via Firebase.
- *
- * @param {string} phoneNumber - E.164 format, e.g. "+263771234567"
- * @returns {ConfirmationResult} — call .confirm(code) to verify
  */
 export async function sendFirebaseOTP(phoneNumber) {
+    console.log(`🔍 FIREBASE: sendFirebaseOTP("${phoneNumber}")`);
     const appVerifier = window.recaptchaVerifier;
-    if (!appVerifier) throw new Error("reCAPTCHA not initialized");
-    const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
-    return confirmationResult;
+    if (!appVerifier) {
+        console.error("❌ FIREBASE: reCAPTCHA not initialized! Call setupRecaptcha first.");
+        throw new Error("reCAPTCHA not initialized");
+    }
+    try {
+        console.log("🔍 FIREBASE: Calling signInWithPhoneNumber...");
+        const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+        console.log("✅ FIREBASE: SMS sent successfully! Confirmation result received.");
+        return confirmationResult;
+    } catch (err) {
+        console.error("❌ FIREBASE: signInWithPhoneNumber FAILED:");
+        console.error("  Code:", err.code);
+        console.error("  Message:", err.message);
+        console.error("  Full error:", err);
+        throw err;
+    }
 }
 
 /**
- * After user enters the 6-digit code, confirm it and get the Firebase ID token.
- *
- * @param {ConfirmationResult} confirmationResult
- * @param {string} code - The 6-digit OTP entered by the user
- * @returns {string} Firebase ID token to send to your backend
+ * Confirm OTP code and get Firebase ID token.
  */
 export async function confirmOTPAndGetToken(confirmationResult, code) {
-    const result = await confirmationResult.confirm(code);
-    const idToken = await result.user.getIdToken();
-    return idToken;
+    console.log(`🔍 FIREBASE: confirmOTPAndGetToken(code="${code}")`);
+    try {
+        const result = await confirmationResult.confirm(code);
+        console.log("✅ FIREBASE: Code confirmed! Getting ID token...");
+        const idToken = await result.user.getIdToken();
+        console.log("✅ FIREBASE: Got ID token (length:", idToken.length, ")");
+        return idToken;
+    } catch (err) {
+        console.error("❌ FIREBASE: confirmOTP FAILED:");
+        console.error("  Code:", err.code);
+        console.error("  Message:", err.message);
+        throw err;
+    }
 }
 
 export { auth };
