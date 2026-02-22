@@ -146,24 +146,38 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
     auth_mode = _get_auth_mode()
 
-    # In fallback mode, send OTP now
-    if auth_mode == "otp":
-        await _generate_and_send_otp(user, db)
-
-    return {
-        "message": "Account created! Please verify your phone number.",
-        "user_id": str(user.id),
-        "phone": req.phone,
-        "requires_otp": True,
-        "auth_mode": auth_mode,
-    }
+    if auth_mode == "firebase":
+        # Firebase mode: require phone verification
+        return {
+            "message": "Account created! Please verify your phone number.",
+            "user_id": str(user.id),
+            "phone": req.phone,
+            "requires_otp": True,
+            "auth_mode": "firebase",
+        }
+    else:
+        # No Firebase: skip OTP, issue tokens directly
+        user.phone_verified = False
+        access = create_access_token({"sub": str(user.id), "role": user.role.value})
+        refresh = create_refresh_token({"sub": str(user.id)})
+        user.refresh_token = refresh
+        await db.commit()
+        await db.refresh(user)
+        logger.info(f"✅ Registration complete for {user.id} (no OTP — Firebase not configured)")
+        return {
+            "message": "Account created!",
+            "requires_otp": False,
+            "access_token": access,
+            "refresh_token": refresh,
+            "user": UserResponse.model_validate(user).model_dump(),
+        }
 
 
 # ── Login ────────────────────────────────────────────────────
 
 @router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Verify credentials, return user_id + phone + auth_mode."""
+    """Verify credentials."""
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(req.password, user.password_hash):
@@ -176,17 +190,30 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     auth_mode = _get_auth_mode()
 
-    # In fallback mode, send OTP now
-    if auth_mode == "otp":
-        await _generate_and_send_otp(user, db)
-
-    return {
-        "message": "Credentials verified. Please verify your phone.",
-        "user_id": str(user.id),
-        "phone": user.phone,
-        "requires_otp": True,
-        "auth_mode": auth_mode,
-    }
+    if auth_mode == "firebase":
+        # Firebase mode: require phone verification
+        return {
+            "message": "Credentials verified. Please verify your phone.",
+            "user_id": str(user.id),
+            "phone": user.phone,
+            "requires_otp": True,
+            "auth_mode": "firebase",
+        }
+    else:
+        # No Firebase: skip OTP, issue tokens directly
+        access = create_access_token({"sub": str(user.id), "role": user.role.value})
+        refresh = create_refresh_token({"sub": str(user.id)})
+        user.refresh_token = refresh
+        await db.commit()
+        await db.refresh(user)
+        logger.info(f"✅ Login complete for {user.id} (no OTP — Firebase not configured)")
+        return {
+            "message": "Login successful!",
+            "requires_otp": False,
+            "access_token": access,
+            "refresh_token": refresh,
+            "user": UserResponse.model_validate(user).model_dump(),
+        }
 
 
 # ── Verify Firebase ID Token ────────────────────────────────

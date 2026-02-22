@@ -31,12 +31,19 @@ export default function Login() {
                 setOtpStep(true);
 
                 if (data.auth_mode === "firebase") {
-                    // Firebase mode: trigger Firebase SMS
                     await handleFirebaseSend(data.phone);
                 } else {
-                    // OTP mode: backend already sent the OTP to console
                     toast.success(`📲 Verification code sent to ${data.phone}`);
                 }
+            } else {
+                // No OTP required — tokens came directly
+                localStorage.setItem("access_token", data.access_token);
+                localStorage.setItem("refresh_token", data.refresh_token);
+                localStorage.setItem("user", JSON.stringify(data.user));
+                useAuthStore.setState({ user: data.user, isAuthenticated: true });
+                toast.success(`Welcome back, ${data.user.full_name}!`);
+                const dest = data.user.role === "admin" ? "/admin" : data.user.role === "employer" ? "/employer" : "/employee";
+                navigate(dest);
             }
         } catch (err) {
             toast.error(err.response?.data?.detail || "Login failed");

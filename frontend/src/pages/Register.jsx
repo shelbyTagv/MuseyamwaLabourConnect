@@ -42,6 +42,14 @@ export default function Register() {
                 } else {
                     toast.success(`📲 Verification code sent to ${data.phone}`);
                 }
+            } else {
+                // No OTP required — tokens came directly
+                localStorage.setItem("access_token", data.access_token);
+                localStorage.setItem("refresh_token", data.refresh_token);
+                localStorage.setItem("user", JSON.stringify(data.user));
+                useAuthStore.setState({ user: data.user, isAuthenticated: true });
+                toast.success(`Welcome, ${data.user.full_name}!`);
+                navigate("/tokens");
             }
         } catch (err) {
             toast.error(err.response?.data?.detail || "Registration failed");
