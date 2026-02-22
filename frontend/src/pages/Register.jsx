@@ -1,13 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import useAuthStore from "../hooks/useAuth";
-import { setupRecaptcha, sendFirebaseOTP, confirmOTPAndGetToken } from "../services/firebase";
 import toast from "react-hot-toast";
 import { UserPlus, Eye, EyeOff, Briefcase, Wrench, KeyRound, Loader2, ShieldCheck, Phone } from "lucide-react";
 
 export default function Register() {
     const navigate = useNavigate();
-    const { register, verifyFirebase, loading } = useAuthStore();
+    const { register, verifyFirebase, verifyOtp, resendOtp, loading } = useAuthStore();
     const [form, setForm] = useState({
         full_name: "",
         email: "",
@@ -19,6 +18,7 @@ export default function Register() {
 
     // OTP step
     const [otpStep, setOtpStep] = useState(false);
+    const [authMode, setAuthMode] = useState("otp");
     const [userId, setUserId] = useState(null);
     const [phone, setPhone] = useState("");
     const [otp, setOtp] = useState("");
@@ -27,17 +27,6 @@ export default function Register() {
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
-    // Set up invisible reCAPTCHA when entering OTP step
-    useEffect(() => {
-        if (otpStep) {
-            try {
-                setupRecaptcha("verify-btn");
-            } catch (err) {
-                console.error("reCAPTCHA setup error:", err);
-            }
-        }
-    }, [otpStep]);
-
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
@@ -45,30 +34,28 @@ export default function Register() {
             if (data.requires_otp) {
                 setUserId(data.user_id);
                 setPhone(data.phone);
+                setAuthMode(data.auth_mode || "otp");
                 setOtpStep(true);
+
+                if (data.auth_mode === "firebase") {
+                    await handleFirebaseSend(data.phone);
+                } else {
+                    toast.success(`📲 Verification code sent to ${data.phone}`);
+                }
             }
         } catch (err) {
             toast.error(err.response?.data?.detail || "Registration failed");
         }
     };
 
-    // Send Firebase OTP once we enter OTP step
-    useEffect(() => {
-        if (otpStep && phone && !confirmationRef.current) {
-            const timer = setTimeout(async () => {
-                await handleSendOTP();
-            }, 500);
-            return () => clearTimeout(timer);
-        }
-    }, [otpStep, phone]);
-
-    const handleSendOTP = async () => {
+    const handleFirebaseSend = async (phoneNumber) => {
         setSending(true);
         try {
+            const { setupRecaptcha, sendFirebaseOTP } = await import("../services/firebase");
             setupRecaptcha("verify-btn");
-            const confirmation = await sendFirebaseOTP(phone);
+            const confirmation = await sendFirebaseOTP(phoneNumber);
             confirmationRef.current = confirmation;
-            toast.success(`📲 Verification code sent to ${phone}`);
+            toast.success(`📲 Verification code sent to ${phoneNumber}`);
         } catch (err) {
             console.error("Firebase OTP error:", err);
             if (err.code === "auth/too-many-requests") {
@@ -76,7 +63,7 @@ export default function Register() {
             } else if (err.code === "auth/invalid-phone-number") {
                 toast.error("Invalid phone number format. Use +263...");
             } else {
-                toast.error("Failed to send verification code. Please try again.");
+                toast.error("Failed to send code. Try again.");
             }
         } finally {
             setSending(false);
@@ -86,16 +73,21 @@ export default function Register() {
     const handleOtpVerify = async (e) => {
         e.preventDefault();
         if (otp.length !== 6) { toast.error("Enter the 6-digit code"); return; }
-        if (!confirmationRef.current) {
-            toast.error("Please wait for the verification code to be sent");
-            return;
-        }
-        try {
-            // Verify OTP with Firebase → get Firebase ID token
-            const firebaseIdToken = await confirmOTPAndGetToken(confirmationRef.current, otp);
 
-            // Send Firebase ID token to our backend → get app tokens
-            const data = await verifyFirebase(userId, firebaseIdToken);
+        try {
+            let data;
+            if (authMode === "firebase") {
+                if (!confirmationRef.current) {
+                    toast.error("Please wait for the code to be sent");
+                    return;
+                }
+                const { confirmOTPAndGetToken } = await import("../services/firebase");
+                const firebaseIdToken = await confirmOTPAndGetToken(confirmationRef.current, otp);
+                data = await verifyFirebase(userId, firebaseIdToken);
+            } else {
+                data = await verifyOtp(userId, otp);
+            }
+
             toast.success(`Welcome, ${data.user.full_name}! Your phone is now verified.`);
             navigate("/tokens");
         } catch (err) {
@@ -109,8 +101,15 @@ export default function Register() {
     };
 
     const handleResend = async () => {
-        confirmationRef.current = null;
-        await handleSendOTP();
+        if (authMode === "firebase") {
+            confirmationRef.current = null;
+            await handleFirebaseSend(phone);
+        } else {
+            try {
+                const data = await resendOtp(userId);
+                toast.success(data.message);
+            } catch { toast.error("Failed to resend code"); }
+        }
     };
 
     return (
@@ -128,9 +127,7 @@ export default function Register() {
                 </div>
 
                 {!otpStep ? (
-                    /* ── Registration Form ── */
                     <form onSubmit={handleSubmit} className="glass-card p-8 space-y-5">
-                        {/* Role selector */}
                         <div>
                             <label className="input-label">I want to</label>
                             <div className="grid grid-cols-2 gap-3">
@@ -156,20 +153,17 @@ export default function Register() {
                             <input type="text" required value={form.full_name} onChange={update("full_name")}
                                 className="input-field" placeholder="John Doe" />
                         </div>
-
                         <div>
                             <label className="input-label">Email</label>
                             <input type="email" required value={form.email} onChange={update("email")}
                                 className="input-field" placeholder="you@example.com" />
                         </div>
-
                         <div>
                             <label className="input-label">Phone (Zimbabwe)</label>
                             <input type="tel" required value={form.phone} onChange={update("phone")}
                                 className="input-field" placeholder="+263771234567" />
-                            <p className="text-xs text-white/40 mt-1">We'll send a verification code to this number via SMS</p>
+                            <p className="text-xs text-white/40 mt-1">We'll send a verification code to this number</p>
                         </div>
-
                         <div>
                             <label className="input-label">Password</label>
                             <div className="relative">
@@ -184,11 +178,7 @@ export default function Register() {
                         </div>
 
                         <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
-                            {loading ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <><UserPlus size={18} /> Create Account</>
-                            )}
+                            {loading ? <Loader2 size={18} className="animate-spin" /> : <><UserPlus size={18} /> Create Account</>}
                         </button>
 
                         <p className="text-center text-sm text-white/50">
@@ -197,7 +187,6 @@ export default function Register() {
                         </p>
                     </form>
                 ) : (
-                    /* ── Firebase OTP Verification Step ── */
                     <form onSubmit={handleOtpVerify} className="glass-card p-8 space-y-5">
                         <div className="flex items-center justify-center mb-2">
                             <div className="w-16 h-16 rounded-full bg-brand-600/20 flex items-center justify-center">
@@ -206,7 +195,7 @@ export default function Register() {
                         </div>
 
                         <p className="text-sm text-white/50 text-center">
-                            A 6-digit verification code has been sent to your phone to confirm your number.
+                            A 6-digit verification code has been sent to confirm your phone number.
                         </p>
 
                         {sending ? (
@@ -218,26 +207,20 @@ export default function Register() {
                             <>
                                 <div>
                                     <label className="input-label">Verification Code</label>
-                                    <input
-                                        className="input-field text-center text-2xl tracking-[0.5em] font-mono"
-                                        placeholder="000000"
-                                        maxLength={6}
-                                        value={otp}
-                                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                                        autoFocus
-                                    />
+                                    <input className="input-field text-center text-2xl tracking-[0.5em] font-mono"
+                                        placeholder="000000" maxLength={6} value={otp}
+                                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} autoFocus />
                                     <p className="text-xs text-white/40 mt-2 text-center flex items-center justify-center gap-1">
-                                        <Phone size={12} /> SMS sent via Firebase to {phone}
+                                        <Phone size={12} />
+                                        {authMode === "firebase"
+                                            ? `SMS sent via Firebase to ${phone}`
+                                            : `Check Render logs for the code sent to ${phone}`
+                                        }
                                     </p>
                                 </div>
-
                                 <button id="verify-btn" type="submit" disabled={loading || otp.length !== 6}
                                     className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50">
-                                    {loading ? (
-                                        <Loader2 size={18} className="animate-spin" />
-                                    ) : (
-                                        <><KeyRound size={18} /> Verify & Continue</>
-                                    )}
+                                    {loading ? <Loader2 size={18} className="animate-spin" /> : <><KeyRound size={18} /> Verify & Continue</>}
                                 </button>
                             </>
                         )}
