@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import useAuthStore from "../hooks/useAuth";
+import { setupRecaptcha, sendFirebaseOTP, confirmOTPAndGetToken } from "../services/firebase";
 import toast from "react-hot-toast";
-import { UserPlus, Eye, EyeOff, Briefcase, Wrench, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { UserPlus, Eye, EyeOff, Briefcase, Wrench, KeyRound, Loader2, ShieldCheck, Phone } from "lucide-react";
 
 export default function Register() {
     const navigate = useNavigate();
-    const { register, verifyOtp, resendOtp, loading } = useAuthStore();
+    const { register, verifyFirebase, loading } = useAuthStore();
     const [form, setForm] = useState({
         full_name: "",
         email: "",
@@ -21,8 +22,21 @@ export default function Register() {
     const [userId, setUserId] = useState(null);
     const [phone, setPhone] = useState("");
     const [otp, setOtp] = useState("");
+    const [sending, setSending] = useState(false);
+    const confirmationRef = useRef(null);
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
+
+    // Set up invisible reCAPTCHA when entering OTP step
+    useEffect(() => {
+        if (otpStep) {
+            try {
+                setupRecaptcha("verify-btn");
+            } catch (err) {
+                console.error("reCAPTCHA setup error:", err);
+            }
+        }
+    }, [otpStep]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -32,30 +46,71 @@ export default function Register() {
                 setUserId(data.user_id);
                 setPhone(data.phone);
                 setOtpStep(true);
-                toast.success(`📲 Verification code sent to ${data.phone}`);
             }
         } catch (err) {
             toast.error(err.response?.data?.detail || "Registration failed");
         }
     };
 
+    // Send Firebase OTP once we enter OTP step
+    useEffect(() => {
+        if (otpStep && phone && !confirmationRef.current) {
+            const timer = setTimeout(async () => {
+                await handleSendOTP();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [otpStep, phone]);
+
+    const handleSendOTP = async () => {
+        setSending(true);
+        try {
+            setupRecaptcha("verify-btn");
+            const confirmation = await sendFirebaseOTP(phone);
+            confirmationRef.current = confirmation;
+            toast.success(`📲 Verification code sent to ${phone}`);
+        } catch (err) {
+            console.error("Firebase OTP error:", err);
+            if (err.code === "auth/too-many-requests") {
+                toast.error("Too many attempts. Please try again later.");
+            } else if (err.code === "auth/invalid-phone-number") {
+                toast.error("Invalid phone number format. Use +263...");
+            } else {
+                toast.error("Failed to send verification code. Please try again.");
+            }
+        } finally {
+            setSending(false);
+        }
+    };
+
     const handleOtpVerify = async (e) => {
         e.preventDefault();
         if (otp.length !== 6) { toast.error("Enter the 6-digit code"); return; }
+        if (!confirmationRef.current) {
+            toast.error("Please wait for the verification code to be sent");
+            return;
+        }
         try {
-            const data = await verifyOtp(userId, otp);
+            // Verify OTP with Firebase → get Firebase ID token
+            const firebaseIdToken = await confirmOTPAndGetToken(confirmationRef.current, otp);
+
+            // Send Firebase ID token to our backend → get app tokens
+            const data = await verifyFirebase(userId, firebaseIdToken);
             toast.success(`Welcome, ${data.user.full_name}! Your phone is now verified.`);
             navigate("/tokens");
         } catch (err) {
-            toast.error(err.response?.data?.detail || "Verification failed");
+            console.error("Verify error:", err);
+            if (err.code === "auth/invalid-verification-code") {
+                toast.error("Wrong code. Please check and try again.");
+            } else {
+                toast.error(err.response?.data?.detail || "Verification failed");
+            }
         }
     };
 
     const handleResend = async () => {
-        try {
-            const data = await resendOtp(userId);
-            toast.success(data.message);
-        } catch { toast.error("Failed to resend code"); }
+        confirmationRef.current = null;
+        await handleSendOTP();
     };
 
     return (
@@ -112,7 +167,7 @@ export default function Register() {
                             <label className="input-label">Phone (Zimbabwe)</label>
                             <input type="tel" required value={form.phone} onChange={update("phone")}
                                 className="input-field" placeholder="+263771234567" />
-                            <p className="text-xs text-white/40 mt-1">We'll send a verification code to this number</p>
+                            <p className="text-xs text-white/40 mt-1">We'll send a verification code to this number via SMS</p>
                         </div>
 
                         <div>
@@ -142,7 +197,7 @@ export default function Register() {
                         </p>
                     </form>
                 ) : (
-                    /* ── OTP Verification Step ── */
+                    /* ── Firebase OTP Verification Step ── */
                     <form onSubmit={handleOtpVerify} className="glass-card p-8 space-y-5">
                         <div className="flex items-center justify-center mb-2">
                             <div className="w-16 h-16 rounded-full bg-brand-600/20 flex items-center justify-center">
@@ -151,35 +206,48 @@ export default function Register() {
                         </div>
 
                         <p className="text-sm text-white/50 text-center">
-                            A 6-digit verification code has been sent to your phone to confirm your number is real.
+                            A 6-digit verification code has been sent to your phone to confirm your number.
                         </p>
 
-                        <div>
-                            <label className="input-label">Verification Code</label>
-                            <input
-                                className="input-field text-center text-2xl tracking-[0.5em] font-mono"
-                                placeholder="000000"
-                                maxLength={6}
-                                value={otp}
-                                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                                autoFocus
-                            />
-                        </div>
+                        {sending ? (
+                            <div className="text-center py-4">
+                                <Loader2 size={24} className="animate-spin mx-auto mb-2 text-brand-400" />
+                                <p className="text-sm text-white/50">Sending verification code...</p>
+                            </div>
+                        ) : (
+                            <>
+                                <div>
+                                    <label className="input-label">Verification Code</label>
+                                    <input
+                                        className="input-field text-center text-2xl tracking-[0.5em] font-mono"
+                                        placeholder="000000"
+                                        maxLength={6}
+                                        value={otp}
+                                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                                        autoFocus
+                                    />
+                                    <p className="text-xs text-white/40 mt-2 text-center flex items-center justify-center gap-1">
+                                        <Phone size={12} /> SMS sent via Firebase to {phone}
+                                    </p>
+                                </div>
 
-                        <button type="submit" disabled={loading || otp.length !== 6}
-                            className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50">
-                            {loading ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <><KeyRound size={18} /> Verify & Continue</>
-                            )}
-                        </button>
+                                <button id="verify-btn" type="submit" disabled={loading || otp.length !== 6}
+                                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50">
+                                    {loading ? (
+                                        <Loader2 size={18} className="animate-spin" />
+                                    ) : (
+                                        <><KeyRound size={18} /> Verify & Continue</>
+                                    )}
+                                </button>
+                            </>
+                        )}
 
                         <div className="flex items-center justify-between text-sm">
-                            <button type="button" onClick={handleResend} className="text-brand-400 hover:text-brand-300 transition-colors">
+                            <button type="button" onClick={handleResend} disabled={sending}
+                                className="text-brand-400 hover:text-brand-300 transition-colors disabled:opacity-50">
                                 Resend code
                             </button>
-                            <button type="button" onClick={() => { setOtpStep(false); setOtp(""); }}
+                            <button type="button" onClick={() => { setOtpStep(false); setOtp(""); confirmationRef.current = null; }}
                                 className="text-white/40 hover:text-white/60 transition-colors">
                                 Back
                             </button>
