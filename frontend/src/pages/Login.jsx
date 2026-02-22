@@ -61,7 +61,7 @@ export default function Login() {
             console.log("🔍 LOGIN: Importing firebase module...");
             const { setupRecaptcha, sendFirebaseOTP } = await import("../services/firebase");
             console.log("🔍 LOGIN: Firebase module imported, setting up reCAPTCHA...");
-            setupRecaptcha("verify-btn");
+            setupRecaptcha();
             console.log("🔍 LOGIN: reCAPTCHA ready, sending OTP...");
             const confirmation = await sendFirebaseOTP(phoneNumber);
             confirmationRef.current = confirmation;

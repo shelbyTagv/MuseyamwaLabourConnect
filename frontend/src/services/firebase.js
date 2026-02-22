@@ -35,16 +35,23 @@ console.log("🔍 FIREBASE: App initialized, auth ready");
  * Set up an invisible reCAPTCHA on a button.
  */
 export function setupRecaptcha(buttonId) {
-    console.log(`🔍 FIREBASE: setupRecaptcha("${buttonId}")`);
+    console.log("🔍 FIREBASE: setupRecaptcha()");
     try {
         if (window.recaptchaVerifier) {
             console.log("🔍 FIREBASE: Clearing old reCAPTCHA verifier");
             window.recaptchaVerifier.clear();
         }
-        const btn = document.getElementById(buttonId);
-        console.log(`🔍 FIREBASE: Button #${buttonId} found:`, !!btn);
 
-        window.recaptchaVerifier = new RecaptchaVerifier(auth, buttonId, {
+        // Create a persistent container div (button may not exist in DOM yet)
+        let container = document.getElementById("recaptcha-container");
+        if (!container) {
+            container = document.createElement("div");
+            container.id = "recaptcha-container";
+            document.body.appendChild(container);
+            console.log("🔍 FIREBASE: Created recaptcha-container div in body");
+        }
+
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
             size: "invisible",
             callback: () => {
                 console.log("✅ FIREBASE: reCAPTCHA solved!");

@@ -60,7 +60,7 @@ export default function Register() {
         setSending(true);
         try {
             const { setupRecaptcha, sendFirebaseOTP } = await import("../services/firebase");
-            setupRecaptcha("verify-btn");
+            setupRecaptcha();
             const confirmation = await sendFirebaseOTP(phoneNumber);
             confirmationRef.current = confirmation;
             toast.success(`📲 Verification code sent to ${phoneNumber}`);
