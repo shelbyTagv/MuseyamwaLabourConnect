@@ -43,12 +43,21 @@ _firebase_ready = False
 
 def _init_firebase():
     global _firebase_ready
+    print("\n" + "="*60)
+    print("🔍 DEBUG: Starting Firebase initialization...")
+    print(f"🔍 DEBUG: GOOGLE_APPLICATION_CREDENTIALS = {os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '(not set)')}")
+    print(f"🔍 DEBUG: FIREBASE_PROJECT_ID = {os.getenv('FIREBASE_PROJECT_ID', '(not set)')}")
+    print(f"🔍 DEBUG: FIREBASE_SERVICE_ACCOUNT_BASE64 = {'(set, length=' + str(len(os.getenv('FIREBASE_SERVICE_ACCOUNT_BASE64', ''))) + ')' if os.getenv('FIREBASE_SERVICE_ACCOUNT_BASE64') else '(not set)'}")
+
     try:
         import firebase_admin
         from firebase_admin import credentials
+        print("🔍 DEBUG: firebase_admin imported successfully")
 
         if firebase_admin._apps:
             _firebase_ready = True
+            print("🔍 DEBUG: Firebase already initialized")
+            print("="*60 + "\n")
             return
 
         # Option 1: Service account JSON file
@@ -57,7 +66,8 @@ def _init_firebase():
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
             _firebase_ready = True
-            logger.info("🔥 Firebase initialized with service account file")
+            print("✅ DEBUG: Firebase initialized with service account file")
+            print("="*60 + "\n")
             return
 
         # Option 2: Project ID only
@@ -65,7 +75,8 @@ def _init_firebase():
         if project_id:
             firebase_admin.initialize_app(options={"projectId": project_id})
             _firebase_ready = True
-            logger.info(f"🔥 Firebase initialized with project ID: {project_id}")
+            print(f"✅ DEBUG: Firebase initialized with project ID: {project_id}")
+            print("="*60 + "\n")
             return
 
         # Option 3: Base64-encoded service account
@@ -76,16 +87,26 @@ def _init_firebase():
             cred = credentials.Certificate(sa_json)
             firebase_admin.initialize_app(cred)
             _firebase_ready = True
-            logger.info("🔥 Firebase initialized with base64 service account")
+            print("✅ DEBUG: Firebase initialized with base64 service account")
+            print("="*60 + "\n")
             return
 
-        logger.warning("⚠️ Firebase not configured — using fallback OTP (console-logged)")
+        print("⚠️ DEBUG: No Firebase config found — OTP will be skipped, tokens issued directly")
+        print("="*60 + "\n")
 
-    except ImportError:
-        logger.warning("⚠️ firebase-admin not installed — using fallback OTP")
+    except ImportError as e:
+        print(f"⚠️ DEBUG: firebase-admin not installed: {e}")
+        print("⚠️ DEBUG: OTP will be skipped, tokens issued directly")
+        print("="*60 + "\n")
+    except Exception as e:
+        print(f"❌ DEBUG: Firebase init FAILED with error: {e}")
+        print("⚠️ DEBUG: OTP will be skipped, tokens issued directly")
+        print("="*60 + "\n")
 
 
 _init_firebase()
+print(f"🔍 DEBUG: _firebase_ready = {_firebase_ready}")
+print(f"🔍 DEBUG: auth_mode will be: {'firebase' if _firebase_ready else 'skip-otp (direct tokens)'}")
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -178,9 +199,11 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Verify credentials."""
+    print(f"\n🔍 DEBUG LOGIN: email={req.email}")
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(req.password, user.password_hash):
+        print("🔍 DEBUG LOGIN: Invalid credentials")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if user.is_suspended:
         raise HTTPException(status_code=403, detail="Account suspended")
@@ -189,31 +212,33 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     auth_mode = _get_auth_mode()
+    print(f"🔍 DEBUG LOGIN: _firebase_ready={_firebase_ready}, auth_mode={auth_mode}")
 
     if auth_mode == "firebase":
-        # Firebase mode: require phone verification
-        return {
+        response = {
             "message": "Credentials verified. Please verify your phone.",
             "user_id": str(user.id),
             "phone": user.phone,
             "requires_otp": True,
             "auth_mode": "firebase",
         }
+        print(f"🔍 DEBUG LOGIN: Returning FIREBASE mode response: {response}")
+        return response
     else:
-        # No Firebase: skip OTP, issue tokens directly
         access = create_access_token({"sub": str(user.id), "role": user.role.value})
         refresh = create_refresh_token({"sub": str(user.id)})
         user.refresh_token = refresh
         await db.commit()
         await db.refresh(user)
-        logger.info(f"✅ Login complete for {user.id} (no OTP — Firebase not configured)")
-        return {
+        response = {
             "message": "Login successful!",
             "requires_otp": False,
             "access_token": access,
             "refresh_token": refresh,
             "user": UserResponse.model_validate(user).model_dump(),
         }
+        print(f"🔍 DEBUG LOGIN: Returning DIRECT TOKEN response (no OTP): requires_otp={response['requires_otp']}")
+        return response
 
 
 # ── Verify Firebase ID Token ────────────────────────────────

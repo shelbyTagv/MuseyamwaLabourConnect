@@ -24,6 +24,8 @@ export default function Login() {
         e.preventDefault();
         try {
             const data = await login(email, password);
+            console.log("🔍 DEBUG LOGIN RESPONSE:", JSON.stringify(data, null, 2));
+            console.log("🔍 requires_otp:", data.requires_otp, "auth_mode:", data.auth_mode);
             if (data.requires_otp) {
                 setUserId(data.user_id);
                 setPhone(data.phone);
@@ -37,6 +39,7 @@ export default function Login() {
                 }
             } else {
                 // No OTP required — tokens came directly
+                console.log("🔍 DEBUG: No OTP needed, storing tokens directly");
                 localStorage.setItem("access_token", data.access_token);
                 localStorage.setItem("refresh_token", data.refresh_token);
                 localStorage.setItem("user", JSON.stringify(data.user));
@@ -46,6 +49,7 @@ export default function Login() {
                 navigate(dest);
             }
         } catch (err) {
+            console.error("🔍 DEBUG LOGIN ERROR:", err);
             toast.error(err.response?.data?.detail || "Login failed");
         }
     };
