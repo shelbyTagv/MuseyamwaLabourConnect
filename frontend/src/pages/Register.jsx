@@ -1,21 +1,26 @@
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import useAuthStore from "../hooks/useAuth";
 import toast from "react-hot-toast";
-import { UserPlus, Eye, EyeOff, Briefcase, Wrench } from "lucide-react";
+import { UserPlus, Eye, EyeOff, Briefcase, Wrench, KeyRound, Loader2, ShieldCheck } from "lucide-react";
 
 export default function Register() {
     const navigate = useNavigate();
-    const { register, loading } = useAuthStore();
-    const [searchParams] = useSearchParams();
+    const { register, verifyOtp, resendOtp, loading } = useAuthStore();
     const [form, setForm] = useState({
         full_name: "",
         email: "",
         phone: "",
         password: "",
-        role: searchParams.get("role") || "employee",
+        role: "employee",
     });
     const [showPw, setShowPw] = useState(false);
+
+    // OTP step
+    const [otpStep, setOtpStep] = useState(false);
+    const [userId, setUserId] = useState(null);
+    const [phone, setPhone] = useState("");
+    const [otp, setOtp] = useState("");
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -23,11 +28,34 @@ export default function Register() {
         e.preventDefault();
         try {
             const data = await register(form);
-            toast.success(`Welcome, ${data.user.full_name}! Purchase tokens to get started.`);
-            navigate("/tokens");
+            if (data.requires_otp) {
+                setUserId(data.user_id);
+                setPhone(data.phone);
+                setOtpStep(true);
+                toast.success(`📲 Verification code sent to ${data.phone}`);
+            }
         } catch (err) {
             toast.error(err.response?.data?.detail || "Registration failed");
         }
+    };
+
+    const handleOtpVerify = async (e) => {
+        e.preventDefault();
+        if (otp.length !== 6) { toast.error("Enter the 6-digit code"); return; }
+        try {
+            const data = await verifyOtp(userId, otp);
+            toast.success(`Welcome, ${data.user.full_name}! Your phone is now verified.`);
+            navigate("/tokens");
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Verification failed");
+        }
+    };
+
+    const handleResend = async () => {
+        try {
+            const data = await resendOtp(userId);
+            toast.success(data.message);
+        } catch { toast.error("Failed to resend code"); }
     };
 
     return (
@@ -36,76 +64,128 @@ export default function Register() {
 
             <div className="relative z-10 w-full max-w-md">
                 <div className="text-center mb-8">
-                    <h1 className="text-3xl font-bold gradient-text mb-2">Join MuseyamwaLabourConnect</h1>
-                    <p className="text-white/50">Create your account</p>
+                    <h1 className="text-3xl font-bold gradient-text mb-2">
+                        {otpStep ? "Verify Your Phone" : "Join MuseyamwaLabourConnect"}
+                    </h1>
+                    <p className="text-white/50">
+                        {otpStep ? `Enter the code sent to ${phone}` : "Create your account"}
+                    </p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="glass-card p-8 space-y-5">
-                    {/* Role selector */}
-                    <div>
-                        <label className="input-label">I want to</label>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button type="button" onClick={() => setForm({ ...form, role: "employer" })}
-                                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-all
+                {!otpStep ? (
+                    /* ── Registration Form ── */
+                    <form onSubmit={handleSubmit} className="glass-card p-8 space-y-5">
+                        {/* Role selector */}
+                        <div>
+                            <label className="input-label">I want to</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button type="button" onClick={() => setForm({ ...form, role: "employer" })}
+                                    className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-all
                   ${form.role === "employer"
-                                        ? "bg-brand-600/20 border-brand-500/50 text-brand-300"
-                                        : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"}`}>
-                                <Briefcase size={18} /> Hire Workers
-                            </button>
-                            <button type="button" onClick={() => setForm({ ...form, role: "employee" })}
-                                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-all
+                                            ? "bg-brand-600/20 border-brand-500/50 text-brand-300"
+                                            : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"}`}>
+                                    <Briefcase size={18} /> Hire Workers
+                                </button>
+                                <button type="button" onClick={() => setForm({ ...form, role: "employee" })}
+                                    className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-all
                   ${form.role === "employee"
-                                        ? "bg-brand-600/20 border-brand-500/50 text-brand-300"
-                                        : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"}`}>
-                                <Wrench size={18} /> Find Work
+                                            ? "bg-brand-600/20 border-brand-500/50 text-brand-300"
+                                            : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"}`}>
+                                    <Wrench size={18} /> Find Work
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="input-label">Full Name</label>
+                            <input type="text" required value={form.full_name} onChange={update("full_name")}
+                                className="input-field" placeholder="John Doe" />
+                        </div>
+
+                        <div>
+                            <label className="input-label">Email</label>
+                            <input type="email" required value={form.email} onChange={update("email")}
+                                className="input-field" placeholder="you@example.com" />
+                        </div>
+
+                        <div>
+                            <label className="input-label">Phone (Zimbabwe)</label>
+                            <input type="tel" required value={form.phone} onChange={update("phone")}
+                                className="input-field" placeholder="+263771234567" />
+                            <p className="text-xs text-white/40 mt-1">We'll send a verification code to this number</p>
+                        </div>
+
+                        <div>
+                            <label className="input-label">Password</label>
+                            <div className="relative">
+                                <input type={showPw ? "text" : "password"} required minLength={8}
+                                    value={form.password} onChange={update("password")}
+                                    className="input-field pr-12" placeholder="Min 8 characters" />
+                                <button type="button" onClick={() => setShowPw(!showPw)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70">
+                                    {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+                            {loading ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <><UserPlus size={18} /> Create Account</>
+                            )}
+                        </button>
+
+                        <p className="text-center text-sm text-white/50">
+                            Already have an account?{" "}
+                            <Link to="/login" className="text-brand-400 hover:text-brand-300 font-medium">Sign In</Link>
+                        </p>
+                    </form>
+                ) : (
+                    /* ── OTP Verification Step ── */
+                    <form onSubmit={handleOtpVerify} className="glass-card p-8 space-y-5">
+                        <div className="flex items-center justify-center mb-2">
+                            <div className="w-16 h-16 rounded-full bg-brand-600/20 flex items-center justify-center">
+                                <ShieldCheck size={32} className="text-brand-400" />
+                            </div>
+                        </div>
+
+                        <p className="text-sm text-white/50 text-center">
+                            A 6-digit verification code has been sent to your phone to confirm your number is real.
+                        </p>
+
+                        <div>
+                            <label className="input-label">Verification Code</label>
+                            <input
+                                className="input-field text-center text-2xl tracking-[0.5em] font-mono"
+                                placeholder="000000"
+                                maxLength={6}
+                                value={otp}
+                                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                                autoFocus
+                            />
+                        </div>
+
+                        <button type="submit" disabled={loading || otp.length !== 6}
+                            className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50">
+                            {loading ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <><KeyRound size={18} /> Verify & Continue</>
+                            )}
+                        </button>
+
+                        <div className="flex items-center justify-between text-sm">
+                            <button type="button" onClick={handleResend} className="text-brand-400 hover:text-brand-300 transition-colors">
+                                Resend code
+                            </button>
+                            <button type="button" onClick={() => { setOtpStep(false); setOtp(""); }}
+                                className="text-white/40 hover:text-white/60 transition-colors">
+                                Back
                             </button>
                         </div>
-                    </div>
-
-                    <div>
-                        <label className="input-label">Full Name</label>
-                        <input type="text" required value={form.full_name} onChange={update("full_name")}
-                            className="input-field" placeholder="John Doe" />
-                    </div>
-
-                    <div>
-                        <label className="input-label">Email</label>
-                        <input type="email" required value={form.email} onChange={update("email")}
-                            className="input-field" placeholder="you@example.com" />
-                    </div>
-
-                    <div>
-                        <label className="input-label">Phone (Zimbabwe)</label>
-                        <input type="tel" required value={form.phone} onChange={update("phone")}
-                            className="input-field" placeholder="+263771234567" />
-                    </div>
-
-                    <div>
-                        <label className="input-label">Password</label>
-                        <div className="relative">
-                            <input type={showPw ? "text" : "password"} required minLength={8}
-                                value={form.password} onChange={update("password")}
-                                className="input-field pr-12" placeholder="Min 8 characters" />
-                            <button type="button" onClick={() => setShowPw(!showPw)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70">
-                                {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
-                            </button>
-                        </div>
-                    </div>
-
-                    <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
-                        {loading ? (
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        ) : (
-                            <><UserPlus size={18} /> Create Account</>
-                        )}
-                    </button>
-
-                    <p className="text-center text-sm text-white/50">
-                        Already have an account?{" "}
-                        <Link to="/login" className="text-brand-400 hover:text-brand-300 font-medium">Sign In</Link>
-                    </p>
-                </form>
+                    </form>
+                )}
             </div>
         </div>
     );

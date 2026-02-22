@@ -22,13 +22,24 @@ export default function HeatMap() {
 
     const loadData = async () => {
         try {
-            const [workersRes, heatRes] = await Promise.all([
-                api.get("/locations/nearby", { params: { latitude: center[0], longitude: center[1], radius_km: 30 } }),
-                api.get("/locations/heatmap"),
+            const [workersRes, heatRes] = await Promise.allSettled([
+                api.get("/locations/workers", {
+                    params: { latitude: center[0], longitude: center[1], radius: 50 }
+                }),
+                api.get("/locations/heatmap", {
+                    params: { latitude: center[0], longitude: center[1], radius: 100 }
+                }),
             ]);
-            setWorkers(workersRes.data);
-            setHeatData(heatRes.data);
-        } catch { toast.error("Failed to load map data"); }
+
+            if (workersRes.status === "fulfilled") {
+                setWorkers(workersRes.value.data);
+            }
+            if (heatRes.status === "fulfilled") {
+                setHeatData(heatRes.value.data);
+            }
+        } catch {
+            // Silently handle — empty map is fine for first use
+        }
         finally { setLoading(false); }
     };
 
@@ -54,7 +65,9 @@ export default function HeatMap() {
                     <h1 className="text-2xl font-bold flex items-center gap-2">
                         <MapPin size={24} className="text-brand-400" /> Find Workers
                     </h1>
-                    <p className="text-white/50 mt-1">{filtered.length} workers online near you</p>
+                    <p className="text-white/50 mt-1">
+                        {filtered.length > 0 ? `${filtered.length} workers online near you` : "No workers online right now"}
+                    </p>
                 </div>
                 <div className="flex items-center gap-2">
                     <Filter size={16} className="text-white/40" />
@@ -102,22 +115,30 @@ export default function HeatMap() {
             </div>
 
             {/* Worker list below map */}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {filtered.slice(0, 12).map((w, i) => (
-                    <div key={i} className="glass-card-hover p-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-teal-400 flex items-center justify-center text-sm font-bold flex-shrink-0">
-                                {w.full_name?.charAt(0)}
+            {filtered.length === 0 ? (
+                <div className="glass-card p-8 text-center">
+                    <Users size={32} className="text-white/20 mx-auto mb-3" />
+                    <p className="text-white/50 text-sm">No workers are currently online in this area.</p>
+                    <p className="text-white/30 text-xs mt-1">Workers will appear here when they toggle their status to online.</p>
+                </div>
+            ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {filtered.slice(0, 12).map((w, i) => (
+                        <div key={i} className="glass-card-hover p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-teal-400 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                                    {w.full_name?.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="font-medium text-sm truncate">{w.full_name}</p>
+                                    {w.profession_tags && <p className="text-xs text-white/40 truncate">{w.profession_tags.join(", ")}</p>}
+                                </div>
+                                {w.rating && <span className="ml-auto text-xs text-amber-400">⭐ {w.rating.toFixed(1)}</span>}
                             </div>
-                            <div className="min-w-0">
-                                <p className="font-medium text-sm truncate">{w.full_name}</p>
-                                {w.profession_tags && <p className="text-xs text-white/40 truncate">{w.profession_tags.join(", ")}</p>}
-                            </div>
-                            {w.rating && <span className="ml-auto text-xs text-amber-400">⭐ {w.rating.toFixed(1)}</span>}
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

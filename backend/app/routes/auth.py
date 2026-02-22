@@ -1,10 +1,13 @@
 """
-Auth routes – registration, login, token refresh, phone verification.
+Auth routes – registration, login (with OTP verification), token refresh.
+On every login or first-time register, a 6-digit OTP is sent to the user's
+phone. They must enter it before receiving access tokens.
 """
 
 import random
 import logging
 from datetime import datetime, timedelta
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,9 +30,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+# ── Helper: generate & store OTP ────────────────────────────
+
+async def _generate_and_send_otp(user: User, db: AsyncSession) -> str:
+    """Generate a 6-digit OTP, store on user, and log it (plug in SMS later)."""
+    otp = f"{random.randint(100000, 999999)}"
+    user.phone_otp = otp
+    user.phone_otp_expires = datetime.utcnow() + timedelta(minutes=10)
+    await db.commit()
+
+    # TODO: Replace with real SMS (Twilio / Africa's Talking)
+    logger.info(f"📱 OTP for {user.phone}: {otp}")
+    print(f"📱 OTP for {user.phone}: {otp}")  # Visible in Render logs
+    return otp
+
+
+# ── Register ─────────────────────────────────────────────────
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Register a new user (employer or employee)."""
+    """
+    Register a new user. Returns the user_id and sends an OTP to their phone.
+    They must call /auth/verify-login-otp to get access tokens.
+    """
     # Check existing
     existing = await db.execute(
         select(User).where((User.email == req.email) | (User.phone == req.phone))
@@ -58,21 +81,25 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(user)
 
-    access = create_access_token({"sub": str(user.id), "role": user.role.value})
-    refresh = create_refresh_token({"sub": str(user.id)})
-    user.refresh_token = refresh
-    await db.commit()
+    # Send OTP for phone verification
+    await _generate_and_send_otp(user, db)
 
-    return TokenResponse(
-        access_token=access,
-        refresh_token=refresh,
-        user=UserResponse.model_validate(user),
-    )
+    return {
+        "message": f"Account created! A verification code has been sent to {req.phone}.",
+        "user_id": str(user.id),
+        "phone": req.phone,
+        "requires_otp": True,
+    }
 
 
-@router.post("/login", response_model=TokenResponse)
+# ── Login ────────────────────────────────────────────────────
+
+@router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Authenticate and return tokens."""
+    """
+    Verify credentials and send OTP to user's phone.
+    Does NOT return tokens yet — user must verify OTP first.
+    """
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(req.password, user.password_hash):
@@ -81,12 +108,61 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Account suspended")
 
     user.last_login = datetime.utcnow()
+    await db.commit()
 
+    # Send OTP
+    await _generate_and_send_otp(user, db)
+
+    return {
+        "message": f"Verification code sent to {user.phone}.",
+        "user_id": str(user.id),
+        "phone": user.phone,
+        "requires_otp": True,
+    }
+
+
+# ── Verify Login OTP (completes login/register) ─────────────
+
+@router.post("/verify-login-otp", response_model=TokenResponse)
+async def verify_login_otp(
+    user_id: str,
+    otp: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Verify the 6-digit OTP sent after login/register.
+    On success: marks phone as verified and returns access + refresh tokens.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.phone_otp:
+        raise HTTPException(status_code=400, detail="No OTP sent. Please login again.")
+
+    if user.phone_otp_expires and datetime.utcnow() > user.phone_otp_expires:
+        user.phone_otp = None
+        user.phone_otp_expires = None
+        await db.commit()
+        raise HTTPException(status_code=400, detail="OTP expired. Please login again.")
+
+    if otp != user.phone_otp:
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    # Mark phone as verified + clear OTP
+    user.phone_verified = True
+    user.phone_otp = None
+    user.phone_otp_expires = None
+
+    # Issue tokens
     access = create_access_token({"sub": str(user.id), "role": user.role.value})
     refresh = create_refresh_token({"sub": str(user.id)})
     user.refresh_token = refresh
     await db.commit()
     await db.refresh(user)
+
+    logger.info(f"✅ OTP verified, login complete for user {user.id}")
 
     return TokenResponse(
         access_token=access,
@@ -94,6 +170,26 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         user=UserResponse.model_validate(user),
     )
 
+
+# ── Resend OTP ───────────────────────────────────────────────
+
+@router.post("/resend-otp")
+async def resend_otp(user_id: str, db: AsyncSession = Depends(get_db)):
+    """Resend a fresh OTP to the user's phone."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await _generate_and_send_otp(user, db)
+
+    return {
+        "message": f"New verification code sent to {user.phone}.",
+        "phone": user.phone,
+    }
+
+
+# ── Refresh Token ────────────────────────────────────────────
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
@@ -120,74 +216,9 @@ async def refresh_token(req: RefreshRequest, db: AsyncSession = Depends(get_db))
     )
 
 
+# ── Me ───────────────────────────────────────────────────────
+
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)):
     """Return current user info."""
     return UserResponse.model_validate(current_user)
-
-
-# ── Phone Verification (OTP) ──────────────────────────────────
-
-
-@router.post("/send-otp", response_model=OTPResponse)
-async def send_otp(
-    req: SendOTPRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Generate a 6-digit OTP and send it to the user's phone.
-    For now, the OTP is logged (plug in an SMS provider like Twilio or Africa's Talking).
-    """
-    if current_user.phone_verified:
-        return OTPResponse(message="Phone already verified", phone_verified=True)
-
-    # Generate 6-digit OTP
-    otp = f"{random.randint(100000, 999999)}"
-    current_user.phone_otp = otp
-    current_user.phone_otp_expires = datetime.utcnow() + timedelta(minutes=10)
-    await db.commit()
-
-    # TODO: Send OTP via SMS. For now, log it.
-    phone = req.phone or current_user.phone
-    logger.info(f"📱 OTP for {phone}: {otp}")
-    print(f"📱 OTP for {phone}: {otp}")  # Visible in Render logs
-
-    return OTPResponse(
-        message=f"Verification code sent to {phone}. Check your phone.",
-        phone_verified=False,
-    )
-
-
-@router.post("/verify-otp", response_model=OTPResponse)
-async def verify_otp(
-    req: VerifyOTPRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Verify the OTP and mark the phone as verified."""
-    if current_user.phone_verified:
-        return OTPResponse(message="Phone already verified", phone_verified=True)
-
-    if not current_user.phone_otp:
-        raise HTTPException(status_code=400, detail="No OTP sent. Request one first.")
-
-    if current_user.phone_otp_expires and datetime.utcnow() > current_user.phone_otp_expires:
-        current_user.phone_otp = None
-        current_user.phone_otp_expires = None
-        await db.commit()
-        raise HTTPException(status_code=400, detail="OTP expired. Request a new one.")
-
-    if req.otp != current_user.phone_otp:
-        raise HTTPException(status_code=400, detail="Invalid OTP code")
-
-    # Mark phone as verified
-    current_user.phone_verified = True
-    current_user.phone_otp = None
-    current_user.phone_otp_expires = None
-    await db.commit()
-
-    logger.info(f"✅ Phone verified for user {current_user.id}")
-
-    return OTPResponse(message="Phone verified successfully!", phone_verified=True)
-
