@@ -3,25 +3,20 @@ import api from "../services/api";
 import toast from "react-hot-toast";
 import { MapPin, Users, Filter } from "lucide-react";
 
-// Dynamic import for Leaflet (avoid SSR issues)
-let MapContainer, TileLayer, Marker, Popup, Circle;
-try {
-    const RL = await import("react-leaflet");
-    MapContainer = RL.MapContainer;
-    TileLayer = RL.TileLayer;
-    Marker = RL.Marker;
-    Popup = RL.Popup;
-    Circle = RL.Circle;
-} catch {
-    // Will show error in UI
-}
-
 export default function HeatMap() {
     const [workers, setWorkers] = useState([]);
     const [heatData, setHeatData] = useState([]);
     const [filter, setFilter] = useState("");
     const [loading, setLoading] = useState(true);
     const [center] = useState([-17.8292, 31.0522]); // Harare default
+    const [leaflet, setLeaflet] = useState(null);
+
+    // Dynamically import react-leaflet at runtime (avoids top-level await)
+    useEffect(() => {
+        import("react-leaflet")
+            .then((mod) => setLeaflet(mod))
+            .catch(() => setLeaflet(null));
+    }, []);
 
     useEffect(() => { loadData(); }, []);
 
@@ -41,14 +36,16 @@ export default function HeatMap() {
         ? workers.filter((w) => w.profession_tags?.some((t) => t.toLowerCase().includes(filter.toLowerCase())))
         : workers;
 
-    if (!MapContainer) {
+    if (!leaflet) {
         return (
             <div className="glass-card p-12 text-center">
                 <MapPin size={48} className="text-white/20 mx-auto mb-4" />
-                <p className="text-white/50">Map component failed to load</p>
+                <p className="text-white/50">Loading map...</p>
             </div>
         );
     }
+
+    const { MapContainer, TileLayer, Circle, Popup } = leaflet;
 
     return (
         <div className="space-y-4 animate-fade-in pb-20 lg:pb-0">
