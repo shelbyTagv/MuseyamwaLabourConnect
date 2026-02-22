@@ -55,7 +55,13 @@ export default function Chat() {
             await api.post("/messages/", { receiver_id: activePartner, content: text });
             setText("");
             loadMessages(activePartner);
-        } catch { toast.error("Failed to send"); }
+        } catch (err) {
+            if (err.response?.status === 402) {
+                toast.error("Insufficient tokens! Buy tokens to send messages.", { icon: "🪙" });
+            } else {
+                toast.error("Failed to send");
+            }
+        }
     };
 
     return (

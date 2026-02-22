@@ -3,6 +3,21 @@ import api from "../services/api";
 import toast from "react-hot-toast";
 import { MapPin, Users, Filter } from "lucide-react";
 
+// Import Leaflet CSS directly — required for map tiles to render
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default icon paths broken by Vite bundler
+import L from "leaflet";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: markerIcon2x,
+    iconUrl: markerIcon,
+    shadowUrl: markerShadow,
+});
+
 export default function HeatMap() {
     const [workers, setWorkers] = useState([]);
     const [heatData, setHeatData] = useState([]);
@@ -11,7 +26,7 @@ export default function HeatMap() {
     const [center] = useState([-17.8292, 31.0522]); // Harare default
     const [leaflet, setLeaflet] = useState(null);
 
-    // Dynamically import react-leaflet at runtime (avoids top-level await)
+    // Dynamically import react-leaflet at runtime
     useEffect(() => {
         import("react-leaflet")
             .then((mod) => setLeaflet(mod))
@@ -81,13 +96,18 @@ export default function HeatMap() {
             </div>
 
             {/* Map */}
-            <div className="glass-card overflow-hidden h-[60vh]">
+            <div className="glass-card overflow-hidden" style={{ height: "60vh", minHeight: "400px" }}>
                 {loading ? (
                     <div className="flex items-center justify-center h-full">
                         <div className="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
                     </div>
                 ) : (
-                    <MapContainer center={center} zoom={12} className="h-full w-full" scrollWheelZoom>
+                    <MapContainer
+                        center={center}
+                        zoom={12}
+                        style={{ height: "100%", width: "100%" }}
+                        scrollWheelZoom
+                    >
                         <TileLayer
                             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                             attribution='&copy; <a href="https://carto.com/">CARTO</a>'
@@ -100,14 +120,14 @@ export default function HeatMap() {
                                     <div className="text-sm">
                                         <p className="font-bold">{w.full_name}</p>
                                         {w.profession_tags && <p className="text-xs">{w.profession_tags.join(", ")}</p>}
-                                        {w.rating && <p className="text-xs">⭐ {w.rating.toFixed(1)}</p>}
+                                        {w.average_rating > 0 && <p className="text-xs">⭐ {w.average_rating.toFixed(1)}</p>}
                                     </div>
                                 </Popup>
                             </Circle>
                         ))}
-                        {/* Heatmap density circles */}
+                        {/* Heatmap density circles — backend returns lat/lng */}
                         {heatData.map((h, i) => (
-                            <Circle key={`heat-${i}`} center={[h.latitude, h.longitude]} radius={h.count * 100}
+                            <Circle key={`heat-${i}`} center={[h.lat, h.lng]} radius={(h.intensity || 1) * 500}
                                 pathOptions={{ color: "#f59e0b", fillColor: "#f59e0b", fillOpacity: 0.15, weight: 0 }} />
                         ))}
                     </MapContainer>
@@ -133,7 +153,7 @@ export default function HeatMap() {
                                     <p className="font-medium text-sm truncate">{w.full_name}</p>
                                     {w.profession_tags && <p className="text-xs text-white/40 truncate">{w.profession_tags.join(", ")}</p>}
                                 </div>
-                                {w.rating && <span className="ml-auto text-xs text-amber-400">⭐ {w.rating.toFixed(1)}</span>}
+                                {w.average_rating > 0 && <span className="ml-auto text-xs text-amber-400">⭐ {w.average_rating.toFixed(1)}</span>}
                             </div>
                         </div>
                     ))}

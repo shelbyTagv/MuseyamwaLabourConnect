@@ -16,6 +16,8 @@ from app.services.auth import get_current_user
 from app.services.job_service import transition_job
 from app.services.notification_service import create_notification
 from app.models.notification import NotificationType
+from app.services.token_service import deduct_tokens
+from app.config import settings
 
 router = APIRouter(prefix="/offers", tags=["Offers"])
 
@@ -26,11 +28,17 @@ async def create_offer(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Send an offer or counter-offer on a job."""
+    """Send an offer or counter-offer on a job (costs tokens)."""
     result = await db.execute(select(Job).where(Job.id == req.job_id))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    # Deduct tokens for sending an offer
+    await deduct_tokens(
+        db, current_user.id, settings.OFFER_TOKEN_COST,
+        description=f"Offer on job: {job.title}",
+    )
 
     offer = Offer(
         job_id=req.job_id,

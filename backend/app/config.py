@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     TOKENS_PER_PURCHASE: int = 10
     JOB_POST_TOKEN_COST: int = 2
     JOB_REQUEST_TOKEN_COST: int = 1
+    MESSAGE_TOKEN_COST: int = 1
+    OFFER_TOKEN_COST: int = 1
 
     # ── GPS ───────────────────────────────────────────────────
     LOCATION_UPDATE_INTERVAL_SECONDS: int = 15

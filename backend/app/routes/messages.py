@@ -17,6 +17,8 @@ from app.services.notification_service import (
     create_notification, register_connection, unregister_connection, broadcast_to_user,
 )
 from app.models.notification import NotificationType
+from app.services.token_service import deduct_tokens
+from app.config import settings
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
@@ -27,7 +29,13 @@ async def send_message(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Send a chat message."""
+    """Send a chat message (costs tokens)."""
+    # Deduct tokens for sending a message
+    await deduct_tokens(
+        db, current_user.id, settings.MESSAGE_TOKEN_COST,
+        description=f"Message to user",
+    )
+
     msg = Message(
         sender_id=current_user.id,
         receiver_id=req.receiver_id,
