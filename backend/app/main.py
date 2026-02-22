@@ -17,6 +17,10 @@ async def lifespan(app: FastAPI):
     """Create tables, seed admin, and optionally seed sample data on startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Ensure new columns exist on already-created tables (safe migrations)
+    await ensure_columns()
+
     # Seed admin user
     await seed_admin()
     # Auto-seed sample data (safe for free-tier deploys with no shell access)
@@ -27,6 +31,28 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Auto-seed skipped or failed: {e}")
     yield
+
+
+async def ensure_columns():
+    """
+    Add columns that may be missing from existing tables.
+    Uses IF NOT EXISTS so it's safe to run repeatedly.
+    """
+    from sqlalchemy import text
+
+    migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_otp VARCHAR(10)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_otp_expires TIMESTAMP",
+    ]
+
+    async with engine.begin() as conn:
+        for sql in migrations:
+            try:
+                await conn.execute(text(sql))
+            except Exception as e:
+                print(f"Migration note: {e}")
+    print("✅ Column migrations checked.")
 
 
 async def seed_admin():
